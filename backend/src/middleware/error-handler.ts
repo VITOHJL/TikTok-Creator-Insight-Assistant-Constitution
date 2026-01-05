@@ -24,10 +24,24 @@ export function errorHandler(
   const statusCode = err.statusCode || 500;
 
   // Don't expose internal error details in production
-  const message = 
-    process.env.NODE_ENV === 'production' && statusCode === 500
-      ? '服务器内部错误，请稍后重试'
-      : err.message;
+  // Also sanitize error messages to avoid exposing technical details
+  let message: string;
+  if (process.env.NODE_ENV === 'production' && statusCode === 500) {
+    message = '服务器内部错误，请稍后重试';
+  } else {
+    // In development, show error but sanitize technical details
+    message = err.message;
+    
+    // Remove potential sensitive information
+    // Don't expose stack traces, file paths, or internal implementation details
+    if (message.includes('ENOENT') || message.includes('EACCES') || message.includes('ECONNREFUSED')) {
+      message = '服务暂时不可用，请稍后重试';
+    } else if (message.includes('Cannot read property') || message.includes('undefined')) {
+      message = '数据处理错误，请重试';
+    } else if (message.includes('JSON') && message.includes('parse')) {
+      message = '数据格式错误，请重试';
+    }
+  }
 
   res.status(statusCode).json({
     success: false,

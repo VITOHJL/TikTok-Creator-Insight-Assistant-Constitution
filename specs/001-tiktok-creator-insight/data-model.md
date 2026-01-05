@@ -5,6 +5,69 @@
 
 ## Entities
 
+### CreationSession (创作会话) - 新增
+
+Represents a multi-stage creative collaboration session.
+
+**Attributes**:
+- `id` (string, required): Unique session ID (UUID)
+- `userInput` (string, required): Original user input (1-500 characters)
+- `currentStage` (number, required): Current stage (1 | 2 | 3)
+- `hooks` (Hook[], optional): Generated hooks from stage 1 (stored for recovery when going back)
+- `selectedHook` (Hook, optional): Selected hook from stage 1
+- `contentOutline` (ContentPoint[], optional): Content points from stage 2
+- `generatedScripts` (ScriptOutline[], optional): Generated scripts from stage 3
+- `createdAt` (Date, required): Session creation timestamp
+- `updatedAt` (Date, required): Last update timestamp
+- `interactionHistory` (Interaction[], optional): History of user interactions
+
+**State Transitions**:
+- `stage1` → `stage2` → `stage3` → `completed`
+- Any stage can go back to previous stage
+
+**Relationships**:
+- Contains: Hook[], ContentPoint[], ScriptOutline[]
+- Has: Interaction[] (for context tracking)
+
+### Hook (金句) - 新增
+
+Represents a hook/slogan option for stage 1.
+
+**Attributes**:
+- `id` (string, required): Unique hook ID
+- `text` (string, required): Hook text content
+- `sessionId` (string, required): Associated session ID
+- `isSelected` (boolean, required): Whether this hook is selected
+- `generatedAt` (Date, required): Generation timestamp
+
+**Validation Rules**:
+- Text must not be empty
+- Text should be emotionally engaging and attention-grabbing
+- 3-5 hooks generated per session
+
+**Relationships**:
+- Belongs to: CreationSession
+
+### ContentPoint (内容要点) - 新增
+
+Represents a detailed content point for stage 2.
+
+**Attributes**:
+- `id` (string, required): Unique content point ID
+- `title` (string, optional): Point title/heading
+- `content` (string, required): Detailed content description (not just outline, but rich content)
+- `order` (number, required): Display order (1, 2, 3)
+- `sessionId` (string, required): Associated session ID
+- `isExpanded` (boolean, optional): Whether this point has been expanded
+
+**Validation Rules**:
+- Content must be detailed and rich, not just a simple outline
+- Must have at least 3 content points
+- Content should include specific scenes, emotions, details
+
+**Relationships**:
+- Belongs to: CreationSession
+
 ### CreationRequest (创作请求)
 
 Represents a user's creative intent input.
@@ -23,6 +86,8 @@ Represents a user's creative intent input.
 **State Transitions**:
 - `pending` → `processing` → `completed` | `failed`
 
+**Note**: In the new three-stage design, CreationRequest is replaced by CreationSession for better state management.
+
 ### ScriptOutline (脚本大纲)
 
 Represents one AI-generated script outline.
@@ -32,14 +97,20 @@ Represents one AI-generated script outline.
 - `title` (string, optional): Script title
 - `points` (string[], required): Structured outline points (minimum 3 per SC-004)
 - `description` (string, optional): Brief description of the script approach
+- `emotionalAnchors` (string[], optional): Emotional anchor points in the script (新增)
+- `memoryPoints` (string[], optional): Memory points designed to be memorable (新增)
+- `conflictDesign` (string, optional): Conflict/reversal design description (新增)
+- `informationDensity` (string, optional): Information density control notes (新增)
+- `sessionId` (string, optional): Associated session ID (新增)
 
 **Validation Rules**:
 - Must have at least 3 points (per SC-004)
 - Style must be distinct from other scripts (per FR-004)
 - Points must be non-empty strings
+- Professional elements (emotional anchors, memory points, etc.) should be included (per FR-043)
 
 **Relationships**:
-- Belongs to: GenerationResult
+- Belongs to: GenerationResult (legacy) or CreationSession (new design)
 
 ### HashtagSuggestion (Hashtag建议)
 
@@ -127,23 +198,47 @@ Represents an API call log entry (only when database is enabled).
 
 ## Data Flow
 
+### 新设计：三阶段协作式流程
+
 ```
-User Input (CreationRequest)
+User Input (创作主题)
     ↓
-Backend API
+Stage 1: 生成3-5个金句选项
     ↓
-Alibaba Cloud Bailian API
+用户选择/微调/替换金句
     ↓
-Response Processing
+Stage 2: 基于选定金句生成3个详细内容要点
     ↓
-GenerationResult
-    ├── ScriptOutline[] (3 items)
-    ├── HashtagSuggestion[] (5-10 items)
-    └── MusicStyleSuggestion (1 item)
+用户编辑/优化/展开内容要点
     ↓
-Frontend Display (Cards)
+Stage 3: 将内容转换为3种风格的脚本
+    ├── 故事叙述型（情绪锚点、冲突设计）
+    ├── 教程教学型（信息密度、步骤清晰）
+    └── 对比评测型（记忆点植入、反转设计）
+    ↓
+Frontend Display (结构化卡片)
     ↓
 [Optional] Database Log (APILog)
+```
+
+### 会话状态持久化
+
+```
+CreationSession
+    ├── currentStage: 1 | 2 | 3
+    ├── hooks: Hook[] (存储生成的金句列表，用于退回 Stage 1 时恢复)
+    ├── selectedHook: Hook
+    ├── contentOutline: ContentPoint[]
+    ├── generatedScripts: ScriptOutline[]
+    └── interactionHistory: Interaction[]
+    
+支持：刷新恢复、阶段回退、上下文传递
+
+阶段回退行为：
+- Stage 2 → Stage 1: 使用缓存的 hooks（之前生成的金句列表）
+- Stage 3 → Stage 2: 使用缓存的 contentOutline（之前生成的内容要点）
+- Stage 1 → Stage 2: 重新生成 contentOutline（基于选定的金句）
+- Stage 2 → Stage 3: 重新生成 generatedScripts（基于内容大纲）
 ```
 
 ## API Request/Response Models
@@ -197,6 +292,26 @@ CREATE TABLE IF NOT EXISTS api_logs (
 CREATE INDEX idx_timestamp ON api_logs(timestamp);
 CREATE INDEX idx_status ON api_logs(status);
 CREATE INDEX idx_prompt_version ON api_logs(prompt_version);
+```
+
+**Table: creation_sessions** (新增 - 会话持久化)
+
+```sql
+CREATE TABLE IF NOT EXISTS creation_sessions (
+  id TEXT PRIMARY KEY,
+  user_input TEXT NOT NULL,
+  current_stage INTEGER NOT NULL CHECK(current_stage IN (1, 2, 3)),
+  hooks TEXT,  -- JSON array of Hook (stored for recovery when going back to stage 1)
+  selected_hook TEXT,  -- JSON object of Hook
+  content_outline TEXT,  -- JSON array of ContentPoint
+  generated_scripts TEXT,  -- JSON array of ScriptOutline
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  interaction_history TEXT  -- JSON array of Interaction
+);
+
+CREATE INDEX idx_created_at ON creation_sessions(created_at);
+CREATE INDEX idx_current_stage ON creation_sessions(current_stage);
 ```
 
 ## Validation Summary

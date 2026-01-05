@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import apiRoutes from './routes/api.js';
+import sessionRoutes from './routes/session.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { logger } from './utils/logger.js';
 import { initializeDatabase, isDatabaseEnabled } from './utils/dev-db.js';
@@ -53,6 +54,7 @@ if (isDatabaseEnabled()) {
 
 // Routes
 app.use('/api', apiRoutes);
+app.use('/api/session', sessionRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

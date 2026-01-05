@@ -55,7 +55,7 @@ export async function callBailianAPI(
     },
     parameters: {
       temperature: 0.7,
-      max_tokens: 2000,
+      max_tokens: 4000, // Increased for script generation (3 scripts need more tokens)
     },
   };
 
@@ -73,7 +73,7 @@ export async function callBailianAPI(
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000, // 30 seconds timeout
+        timeout: 90000, // 90 seconds timeout (increased for script generation)
       }
     );
 

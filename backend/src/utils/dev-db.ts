@@ -32,7 +32,7 @@ export async function initializeDatabase(): Promise<boolean> {
         return;
       }
 
-      // Create table
+      // Create api_logs table (optional, for development debugging)
       db.run(`
         CREATE TABLE IF NOT EXISTS api_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,23 +49,78 @@ export async function initializeDatabase(): Promise<boolean> {
         )
       `, (err) => {
         if (err) {
-          logger.warn('Failed to create table', { error: err.message });
-          db.close();
-          resolve(false);
-          return;
+          logger.warn('Failed to create api_logs table', { error: err.message });
+        } else {
+          // Create indexes for api_logs
+          db.run('CREATE INDEX IF NOT EXISTS idx_timestamp ON api_logs(timestamp)', () => {});
+          db.run('CREATE INDEX IF NOT EXISTS idx_status ON api_logs(status)', () => {});
+          db.run('CREATE INDEX IF NOT EXISTS idx_prompt_version ON api_logs(prompt_version)', () => {});
         }
 
-        // Create indexes
-        db.run('CREATE INDEX IF NOT EXISTS idx_timestamp ON api_logs(timestamp)', () => {});
-        db.run('CREATE INDEX IF NOT EXISTS idx_status ON api_logs(status)', () => {});
-        db.run('CREATE INDEX IF NOT EXISTS idx_prompt_version ON api_logs(prompt_version)', () => {});
-
-        db.close((err) => {
+        // Create creation_sessions table (required for three-stage flow)
+        db.run(`
+          CREATE TABLE IF NOT EXISTS creation_sessions (
+            id TEXT PRIMARY KEY,
+            user_input TEXT NOT NULL,
+            current_stage INTEGER NOT NULL CHECK(current_stage IN (1, 2, 3)),
+            hooks TEXT,
+            selected_hook TEXT,
+            content_outline TEXT,
+            generated_scripts TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            interaction_history TEXT
+          )
+        `, (err) => {
           if (err) {
-            logger.warn('Failed to close database after initialization', { error: err.message });
+            logger.warn('Failed to create creation_sessions table', { error: err.message });
+            db.close();
+            resolve(false);
+            return;
           }
-          logger.info('Database initialized successfully', { path: DB_PATH, promptVersion: PROMPT_VERSION });
-          resolve(true);
+
+          // Create indexes for creation_sessions
+          db.run('CREATE INDEX IF NOT EXISTS idx_created_at ON creation_sessions(created_at)', () => {});
+          db.run('CREATE INDEX IF NOT EXISTS idx_current_stage ON creation_sessions(current_stage)', () => {});
+
+          // Migrate: Add hooks column if it doesn't exist (for existing databases)
+          // Check if hooks column exists by querying table info
+          db.all(`PRAGMA table_info(creation_sessions)`, (err, columns: any[]) => {
+            if (err) {
+              logger.warn('Failed to check table schema', { error: err.message });
+              db.close();
+              resolve(true);
+              return;
+            }
+
+            const hasHooksColumn = columns.some(col => col.name === 'hooks');
+            
+            if (!hasHooksColumn) {
+              db.run(`ALTER TABLE creation_sessions ADD COLUMN hooks TEXT`, (alterErr) => {
+                if (alterErr) {
+                  logger.warn('Failed to add hooks column', { error: alterErr.message });
+                } else {
+                  logger.info('Added hooks column to creation_sessions table');
+                }
+
+                db.close((closeErr) => {
+                  if (closeErr) {
+                    logger.warn('Failed to close database after initialization', { error: closeErr.message });
+                  }
+                  logger.info('Database initialized successfully', { path: DB_PATH, promptVersion: PROMPT_VERSION });
+                  resolve(true);
+                });
+              });
+            } else {
+              db.close((closeErr) => {
+                if (closeErr) {
+                  logger.warn('Failed to close database after initialization', { error: closeErr.message });
+                }
+                logger.info('Database initialized successfully', { path: DB_PATH, promptVersion: PROMPT_VERSION });
+                resolve(true);
+              });
+            }
+          });
         });
       });
     });
