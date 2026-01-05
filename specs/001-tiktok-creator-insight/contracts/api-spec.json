@@ -1,0 +1,293 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "TikTok Creator Insight Assistant API",
+    "version": "1.0.0",
+    "description": "API for generating TikTok video script outlines, hashtags, and music style suggestions"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/api",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/generate": {
+      "post": {
+        "summary": "Generate script outlines, hashtags, and music style",
+        "description": "Takes user input and generates 3 script outlines, 5-10 hashtags, and music style suggestion",
+        "operationId": "generateContent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              },
+              "example": {
+                "prompt": "美食探店",
+                "model": "deepseek-v3"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful generation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "message": "输入不能为空",
+                    "code": "EMPTY_INPUT"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "message": "AI服务暂时不可用，请稍后重试",
+                    "code": "API_ERROR"
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway timeout - API call exceeded timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "error": {
+                    "message": "请求超时，请稍后重试",
+                    "code": "TIMEOUT"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check endpoint",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "database": {
+                      "type": "string",
+                      "example": "enabled"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GenerateRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "User input text (1-500 characters)",
+            "minLength": 1,
+            "maxLength": 500,
+            "example": "美食探店"
+          },
+          "model": {
+            "type": "string",
+            "enum": ["deepseek-v3", "deepseek-r1", "qwen-max"],
+            "description": "AI model to use",
+            "default": "deepseek-v3",
+            "example": "deepseek-v3"
+          }
+        }
+      },
+      "GenerateResponse": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/GenerationData"
+          },
+          "responseTime": {
+            "type": "number",
+            "description": "API response time in milliseconds",
+            "example": 12345
+          }
+        }
+      },
+      "GenerationData": {
+        "type": "object",
+        "required": ["scripts", "hashtags", "musicStyle"],
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/ScriptOutline"
+            }
+          },
+          "hashtags": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/HashtagSuggestion"
+            }
+          },
+          "musicStyle": {
+            "$ref": "#/components/schemas/MusicStyleSuggestion"
+          }
+        }
+      },
+      "ScriptOutline": {
+        "type": "object",
+        "required": ["style", "points"],
+        "properties": {
+          "style": {
+            "type": "string",
+            "description": "Script style type",
+            "example": "story"
+          },
+          "title": {
+            "type": "string",
+            "example": "故事叙述型脚本"
+          },
+          "points": {
+            "type": "array",
+            "minItems": 3,
+            "items": {
+              "type": "string"
+            },
+            "example": ["开场吸引", "故事展开", "高潮部分", "结尾总结"]
+          },
+          "description": {
+            "type": "string",
+            "example": "通过讲述一个完整的故事来展示美食"
+          }
+        }
+      },
+      "HashtagSuggestion": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Hashtag text without #",
+            "example": "美食探店"
+          },
+          "relevance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 95
+          },
+          "category": {
+            "type": "string",
+            "example": "trending"
+          }
+        }
+      },
+      "MusicStyleSuggestion": {
+        "type": "object",
+        "required": ["style"],
+        "properties": {
+          "style": {
+            "type": "string",
+            "description": "Music style description",
+            "example": "轻快节奏"
+          },
+          "mood": {
+            "type": "string",
+            "example": "欢快"
+          },
+          "tempo": {
+            "type": "string",
+            "example": "fast"
+          },
+          "scene": {
+            "type": "string",
+            "example": "适合美食展示场景"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["success", "error"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "object",
+            "required": ["message", "code"],
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "User-friendly error message",
+                "example": "输入不能为空"
+              },
+              "code": {
+                "type": "string",
+                "description": "Error code",
+                "example": "EMPTY_INPUT"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
